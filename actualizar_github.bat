@@ -5,18 +5,21 @@ echo   SINCRONIZANDO CAMBIOS CON GITHUB Y STREAMLIT CLOUD
 echo ========================================================
 echo.
 
+git branch -M main >nul 2>&1
 git add .
 
 set /p commit_msg="Escribe una breve nota del cambio (o presiona ENTER): "
-if "%commit_msg%"=="" set commit_msg=Actualizacion de la aplicacion EPP
+if "%commit_msg%"=="" set commit_msg=Actualizacion automatica de SafeGuard AI
 
 git commit -m "%commit_msg%"
-git push origin main
+
+echo.
+echo Enviando cambios al repositorio remoto...
+git push -u origin main
 
 echo.
 echo ========================================================
-echo   EXITO: Version mas reciente subida a GitHub!
-echo   Streamlit Cloud se actualizara en ~15 segundos.
+echo   PROCESO COMPLETADO!
 echo ========================================================
 echo.
 pause

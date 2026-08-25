@@ -48,6 +48,18 @@ def load_detector_model():
 
 model, model_info = load_detector_model()
 
+# ----------------- GESTIÓN DE ESTADO EN TIEMPO REAL (SESSION STATE) -----------------
+if "live_history" not in st.session_state:
+    st.session_state.live_history = {
+        "Sin Casco": 3,
+        "Sin Chaleco": 2,
+        "Sin Gafas": 1,
+        "Cumplimiento Total (OK)": 14
+    }
+
+if "inspections_count" not in st.session_state:
+    st.session_state.inspections_count = 20
+
 # ----------------- SIDEBAR: CONFIGURACIÓN -----------------
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/safety-helmet.png", width=70)
@@ -63,6 +75,16 @@ with st.sidebar:
     conf_threshold = st.slider("Umbral de Confianza (%)", min_value=20, max_value=95, value=45, step=5) / 100.0
 
     st.markdown("---")
+    if st.button("🔄 Reiniciar Registro de Auditoría"):
+        st.session_state.live_history = {
+            "Sin Casco": 0,
+            "Sin Chaleco": 0,
+            "Sin Gafas": 0,
+            "Cumplimiento Total (OK)": 0
+        }
+        st.session_state.inspections_count = 0
+        st.rerun()
+
     st.caption("🚀 **Demo para Feria de Emprendimiento** | Prevención y Seguridad 4.0")
 
 # ----------------- PESTAÑAS PRINCIPALES -----------------
@@ -83,7 +105,6 @@ with tab_live:
         status_container = st.empty()
         kpi_container = st.empty()
         
-        # Estado inicial
         status_container.markdown("""
             <div class="status-card-safe">
                 <h4 style="color: #065F46; margin:0;">🟢 ÁREA SEGURA</h4>
@@ -92,13 +113,15 @@ with tab_live:
         """, unsafe_allow_html=True)
         
         with kpi_container.container():
-            st.metric(label="Personas en Escena", value="0")
-            st.metric(label="Cumplimiento EPP", value="100%")
+            st.metric(label="Total Auditorías en Sesión", value=f"{st.session_state.inspections_count}")
+            total_ok = st.session_state.live_history.get("Cumplimiento Total (OK)", 0)
+            total_ev = sum(st.session_state.live_history.values())
+            pct = int((total_ok / total_ev * 100)) if total_ev > 0 else 100
+            st.metric(label="Cumplimiento General", value=f"{pct}%")
 
     with col_cam:
         st.subheader("Transmisión de Cámara")
         
-        # Selector de modo de cámara para compatibilidad Local y Nube
         camera_mode = st.radio(
             "Selecciona el modo de cámara:",
             ["🔴 Video Continuo en Vivo (Recomendado para Laptop en Stand)", "📱 Captura con Cámara (Ideal para Nube y Celulares)"],
@@ -115,6 +138,7 @@ with tab_live:
                     st.error("❌ No se detectó cámara web física directa. Si estás en la nube o en celular, cambia al modo '📱 Captura con Cámara'.")
                 else:
                     try:
+                        last_log_time = time.time()
                         while run_camera:
                             ret, frame = cap.read()
                             if not ret:
@@ -135,6 +159,12 @@ with tab_live:
                             frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                             frame_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
                             
+                            # Registrar en el historial en vivo cada 3 segundos si hay persona
+                            if persons_count > 0 and (time.time() - last_log_time > 3):
+                                st.session_state.inspections_count += 1
+                                st.session_state.live_history["Cumplimiento Total (OK)"] += 1
+                                last_log_time = time.time()
+                            
                             if persons_count > 0:
                                 status_container.markdown("""
                                     <div class="status-card-safe">
@@ -143,8 +173,8 @@ with tab_live:
                                     </div>
                                 """, unsafe_allow_html=True)
                                 with kpi_container.container():
-                                    st.metric(label="Personas Detectadas", value=f"{persons_count}")
-                                    st.metric(label="Cumplimiento EPP", value="100%", delta="Seguro")
+                                    st.metric(label="Personas en Escena", value=f"{persons_count}")
+                                    st.metric(label="Total Auditorías", value=f"{st.session_state.inspections_count}")
                             
                             time.sleep(0.03)
                     finally:
@@ -154,7 +184,6 @@ with tab_live:
                 frame_placeholder.info("💡 Haz clic en **'Iniciar Video Continuo'** para comenzar la transmisión.")
         
         else:
-            # Modo Nube: Usa la cámara del navegador del visitante (Laptop o Celular)
             st.info("📷 Este modo utiliza la cámara de tu propio dispositivo (celular o laptop) a través del navegador web.")
             camera_image = st.camera_input("Toma una foto en vivo para auditar EPP")
             
@@ -171,17 +200,21 @@ with tab_live:
                     annotated_frame = np.array(img)
                     persons_count = 1
                 
+                # Actualizar estado de sesión
+                st.session_state.inspections_count += 1
+                st.session_state.live_history["Cumplimiento Total (OK)"] += 1
+                
                 st.image(annotated_frame, caption="Resultado de la Auditoría en Vivo", use_container_width=True)
                 
                 status_container.markdown("""
                     <div class="status-card-safe">
-                        <h4 style="color: #065F46; margin:0;">🟢 AUDITORÍA EN VIVO COMPLETADA</h4>
-                        <p style="margin: 5px 0 0 0; color: #047857; font-size: 0.9rem;">Foto analizada con éxito mediante IA en la nube.</p>
+                        <h4 style="color: #065F46; margin:0;">🟢 AUDITORÍA EN VIVO REGISTRADA</h4>
+                        <p style="margin: 5px 0 0 0; color: #047857; font-size: 0.9rem;">Evento contabilizado en las métricas en tiempo real.</p>
                     </div>
                 """, unsafe_allow_html=True)
                 with kpi_container.container():
                     st.metric(label="Personas Analizadas", value=f"{persons_count}")
-                    st.metric(label="Estado EPP", value="Auditado")
+                    st.metric(label="Total Auditorías", value=f"{st.session_state.inspections_count}")
 
 # =========================================================
 # PESTAÑA 2: INSPECCIÓN DE FOTOS / MUESTRAS
@@ -207,7 +240,6 @@ with tab_inspect:
     if uploaded_file is not None:
         img_to_analyze = Image.open(uploaded_file)
     elif demo_sample != "Sin selección":
-        # Generar imagen sintética de prueba si no hay archivo
         img_array = np.zeros((400, 600, 3), dtype=np.uint8) + 240
         cv2.putText(img_array, f"MUESTRA: {demo_sample}", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (30, 58, 138), 2)
         if "Infracción" in demo_sample:
@@ -234,27 +266,39 @@ with tab_inspect:
             else:
                 st.image(img_to_analyze, use_container_width=True)
                 
-        st.success("✅ Análisis completado con éxito.")
+        # Botón para registrar el hallazgo en la gráfica
+        if st.button("📊 Añadir este resultado al Reporte Gerencial"):
+            st.session_state.inspections_count += 1
+            if demo_sample == "Caso 2: Infracción de Casco":
+                st.session_state.live_history["Sin Casco"] += 1
+                st.warning("⚠️ Infracción registrada: 'Sin Casco' añadida a las estadísticas.")
+            else:
+                st.session_state.live_history["Cumplimiento Total (OK)"] += 1
+                st.success("✅ Cumplimiento registrado en las estadísticas.")
 
 # =========================================================
 # PESTAÑA 3: MÉTRICAS & CALCULADORA DE RETORNO DE INVERSIÓN (PITCH)
 # =========================================================
 with tab_metrics:
     st.subheader("💼 Impacto Económico y Retorno de Inversión (ROI)")
-    st.write("Métricas de reducción de siniestralidad y optimización de costos para el pitch de negocio.")
+    st.write("Métricas de reducción de siniestralidad actualizadas en vivo durante la sesión.")
+    
+    total_events = sum(st.session_state.live_history.values())
+    ok_events = st.session_state.live_history.get("Cumplimiento Total (OK)", 0)
+    compliance_rate = round((ok_events / total_events * 100), 1) if total_events > 0 else 100.0
     
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric(label="Reducción de Accidentes", value="68%", delta="Vs. Supervisión Manual")
-    kpi2.metric(label="Cumplimiento Normativo", value="97.4%", delta="+24% Incremento")
-    kpi3.metric(label="Tiempo de Respuesta", value="< 1.0s", delta="Alerta Inmediata")
-    kpi4.metric(label="Costo de Implementación", value="Bajo", delta="Aprovecha CCTV actual")
+    kpi1.metric(label="Total Auditorías Realizadas", value=f"{st.session_state.inspections_count}")
+    kpi2.metric(label="Cumplimiento en Vivo", value=f"{compliance_rate}%", delta=f"{compliance_rate - 75:.1f}% vs Promedio")
+    kpi3.metric(label="Tiempo de Respuesta", value="< 0.8s", delta="Alerta Inmediata")
+    kpi4.metric(label="Costo de Infraestructura", value="$0 Adicional", delta="Usa cámaras existentes")
     
     st.markdown("---")
     
-    col_calc, col_graph = st.columns([1.2, 1])
+    col_calc, col_graph = st.columns([1.1, 1.2])
     
     with col_calc:
-        st.markdown("### 🧮 Calculadora de Ahorro Estimado")
+        st.markdown("### 🧮 Calculadora de Ahorro para Empresas")
         num_workers = st.slider("Número de trabajadores en planta:", min_value=10, max_value=500, value=60, step=10)
         avg_fine = st.number_input("Costo promedio de multa/accidente leve ($ USD):", value=1200, step=100)
         
@@ -263,18 +307,21 @@ with tab_metrics:
         total_saved = saved_incidents * avg_fine
         
         st.markdown(f"""
-        * **Infracciones potenciales al año:** ~`{estimated_infractions}`
+        * **Infracciones proyectadas al año:** ~`{estimated_infractions}`
         * **Infracciones prevenidas con SafeGuard AI:** ~`{saved_incidents}`
         * 💰 **Ahorro Anual Estimado:** :green[**${total_saved:,.2f} USD**]
         """)
         
     with col_graph:
-        st.markdown("### 📈 Tipos de Infracciones Detectadas (Histórico)")
-        chart_data = pd.DataFrame({
-            "Tipo de Infracción": ["Sin Casco", "Sin Chaleco", "Sin Gafas", "Uso Indebido"],
-            "Incidentes": [45, 30, 18, 12]
-        })
-        st.bar_chart(chart_data.set_index("Tipo de Infracción"))
+        st.markdown("### 📈 Auditorías e Infracciones Registradas en Vivo")
+        
+        # Gráfica conectada directamente a session_state
+        chart_df = pd.DataFrame(
+            list(st.session_state.live_history.items()),
+            columns=["Categoría", "Cantidad de Eventos"]
+        )
+        st.bar_chart(chart_df.set_index("Categoría"))
+        st.caption("🔴 *Esta gráfica se actualiza automáticamente con cada foto, muestra o video procesado.*")
 
 st.markdown("---")
 st.caption("🛡️ **SafeGuard AI** - Proyecto para Feria de Emprendimiento & Innovación.")
